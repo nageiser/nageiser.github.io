@@ -12,8 +12,8 @@ library(tidyr)
 library(ranger)
 library(xgboost)
 library(ggplot2)
-df_train <- read.csv("df_train.csv")
-df_test <- read.csv("df_test.csv")
+df_train <- read.csv("./data/df_train.csv")
+df_test <- read.csv("./data/df_test.csv")
 ```
 
 ## Preparation
