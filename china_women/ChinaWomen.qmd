@@ -1,0 +1,383 @@
+---
+title: "China-Women"
+format: html
+editor: visual
+---
+
+In this exercise, we consider the effect of a change in the price of agricultural goods whose production and cultivation are dominated by either men or women.
+
+Our data come from China, where centrally planned production targets during the Maoist era led to changes in the prices of major staple crops. We focus here on tea, the production and cultivation of which required a large female labor force, as well as orchard fruits, for which the labor force was overwhelmingly male. We use price increases brought on by government policy change in 1979 as a proxy for increases in sex-specific income, and ask the following question: Do changes in sex-specific income alter the incentives for Chinese families to have children of one gender over another? The CSV data file, `chinawomen.csv`, contains the variables shown in the table below, with each observation representing a particular Chinese county in a given year. Note that post is an indicator variable that takes takes 1 in a year following the policy change and 0 in a year before the policy change.
+
+## Question 1
+
+We begin by examining sex ratios in the post-reform period (that is, the period after 1979) according to whether or not tea crops were sown in the region. Estimate the mean sex ratio in 1985, which we define as the proportion of male births, separately for tea-producing and non-tea-producing regions. Compute the 95% confidence interval for each estimate by assuming independence across counties within a year (We will maintain this assumption throughout this exercise). Furthermore, compute the difference-in-means between the two regions and its 95% confidence interval. Are sex ratios different across these regions? What assumption is required in order for us to interpret this difference as causal?
+
+Load data and filter for relevant columns:
+
+```{r}
+library(tidyverse)
+chinawomen <- read_csv("./data/chinawomen.csv")
+cols <- c("admin", "birpop", "biryr", "cashcrop", "orch", "teasown", "sex", "post", "han")
+chinawomen <- chinawomen[cols]
+str(chinawomen)
+```
+
+Get mean sex ratio for tea- and non-tea producing regions. We classify a region as tea-producing if `teasown` is greater than zero; otherwise, we categorize it as non-tea producing.
+
+```{r}
+china_sr <- chinawomen %>% 
+  filter(biryr == 1985) %>%
+  group_by(tea_producing = if_else(teasown > 0, "Tea Producing", "Non-Tea Producing")) %>%
+  summarize(
+    count = n(),
+    mean = mean(sex),
+    sd = sd(sex)
+  )
+china_sr
+```
+
+```{r}
+a <- 0.05
+se <- china_sr$sd / sqrt(china_sr$count)
+ci_upper <- china_sr$mean + qnorm(0.975) * se
+ci_lower <- china_sr$mean - qnorm(0.975) * se
+china_sr$upper <- ci_upper
+china_sr$lower <- ci_lower
+print(china_sr)
+```
+
+Get 95% confidence interval for difference in mean sex ratios:
+
+```{r}
+diff_means <- china_sr$mean[china_sr$tea_producing == "Tea Producing"] - china_sr$mean[china_sr$tea_producing == "Non-Tea Producing"]
+
+var_nontea <- china_sr$sd[1]^2
+var_tea <- china_sr$sd[2]^2
+
+n_nontea <- china_sr$count[1]
+n_tea <- china_sr$count[2]
+
+diff_means_se <- sqrt(var_nontea / n_nontea + var_tea / n_tea)
+
+ci_diff_means <- vector(length = 2)
+
+ci_diff_means[1] <- diff_means - qnorm(0.975) * diff_means_se
+ci_diff_means[2] <- diff_means + qnorm(0.975) * diff_means_se
+print(ci_diff_means)
+ 
+```
+
+Alternatively, we can use the `t_test` function from the `infer` package:
+
+```{r}
+library(infer)
+chinawomen %>% 
+  filter(biryr == 1985) %>%
+  group_by(tea_producing = if_else(teasown > 0, "Tea Producing", "Non-Tea Producing")) %>%
+  t_test(sex ~ tea_producing, order = c("Tea Producing", "Non-Tea Producing"), alternative = "two-sided", conf_int = TRUE, conf_level = 0.95)
+
+```
+
+The 95% CI for the difference in means is \[-0.023, 0.0043\]. As our interval contains zero, we cannot conclude that there is a statistically significant difference in mean sex ratios between tea- and orchard-producing regions. Since this test uses the t-distribution rather than a normal distribution, we get slightly different results for our upper and lower values of the confidence intervals.
+
+## Question 2
+
+Repeat the analysis in the previous question for subsequent years, i.e., 1980, 1981, 1982, ..., 1990. Create a graph which plots the difference-in-means estimates and their 95% confidence intervals against years. Give a substantive interpretation of the plot.
+
+```{r}
+years <- 1980:1990
+diff_in_means_estimates <- function(df, years){
+  diff_means_all <- data.frame(
+    year = years, 
+    diff_means = numeric(length(years)),
+    lower_ci = numeric(length(years)),
+    upper_ci = numeric(length(years))
+  )
+  for (i in seq_along(years)) {
+    y <- years[i]
+    year_data <- df %>%
+      filter(biryr == y) %>%
+      group_by(tea_producing = if_else(teasown > 0, "Tea Producing", "Non-Tea Producing")) %>%
+      summarize(
+        count = n(),
+        mean = mean(sex),
+        se = sd(sex) / sqrt(n())
+      )
+    if (nrow(year_data) == 2) {
+      # Calculate difference in means
+      diff_means <- year_data$mean[year_data$tea_producing == "Tea Producing"] - 
+                    year_data$mean[year_data$tea_producing == "Non-Tea Producing"]
+      
+      # Calculate standard error for difference in means
+      diff_means_se <- sqrt(sum(year_data$se^2))
+      
+      # Store results in the dataframe
+      diff_means_all$diff_means[i] <- diff_means
+      diff_means_all$lower_ci[i] <- diff_means - qnorm(0.975) * diff_means_se
+      diff_means_all$upper_ci[i] <- diff_means + qnorm(0.975) * diff_means_se
+    } else {
+      # If one group is missing, set values to NA
+      diff_means_all$diff_means[i] <- NA
+      diff_means_all$lower_ci[i] <- NA
+      diff_means_all$upper_ci[i] <- NA
+    }
+  }
+  return(diff_means_all)
+}
+
+diff_means_all <- diff_in_means_estimates(chinawomen, years)
+
+# Plot the intervals
+
+ggplot(diff_means_all, aes(x = as.factor(year), y = diff_means)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red", alpha = 0.7) +
+  geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), 
+                width = 0.3, 
+                color = "blue", 
+                alpha = 0.5) +
+  geom_point(color = "blue", size = 3) + 
+  labs(
+    title = "Difference in Mean Sex Ratios between Tea Producing and \nNon-Tea Producing Regions, 1980 - 1990",
+    x = "Year",
+    y = "Difference in Mean Sex Ratio (Proportion Male Births)"
+  ) + 
+  theme_minimal() + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+We see that for most of the 1980s, non-tea-producing regions had higher ratios of males to females than tea-producing regions—there were more female babies compared to male babies in tea-producing regions compared to regions that did not produce tea. The difference is close to for most years, however, and is not statistically significantly different from zero in all years except 1980 (at the 0.05 level).
+
+## Question 3
+
+Next, we compare tea-producing and orchard-producing regions before the policy enactment. Specifically, we examine the sex ratio and the proportion of Han Chinese in 1978. Estimate the mean difference, its standard error, and 95% confidence intervals for each of these measures between the two regions. What do the results imply about the interpretation of the results given in Question 1?
+
+Get difference in mean male sex ratio for births in 1978 between tea and orchard-producing regions:
+
+```{r}
+diff_means_1978 <- diff_in_means_estimates(chinawomen, year = 1978)
+diff_means_1978
+```
+
+We see that there is a negative difference in means in male sex ratio in tea vs. non-tea producing regions in 1978 (-0.013). The 95% CI for the difference-in-means for that year is \[-0.025, -0.00061\]. In other words, families in tea-producing regions had a lower ratio of male to female children than those in orchard-producing regions.
+
+We now look at the relationship between orchard and tea cultivation:
+
+```{r}
+summary(subset(chinawomen, select = c("teasown", "orch")))
+cor(chinawomen$teasown, chinawomen$orch)
+```
+
+We see that both distributions are strongly right-skewed but not correlated. We can also see this by plotting tea production against orchard production for all years. We see that there are a few outliers and some regions where both crops are produced, but by and large regions tend to produce one or the other:
+
+```{r}
+chinawomen %>%
+  ggplot(aes(x = orch, y = teasown)) +
+    geom_point(alpha = 0.01) +
+    ggtitle("Tea vs. Orchard Production, All Years")
+```
+
+Since the two variables are not correlated (corr = -0.03), we can classify a region as tea-producing (rather than orchard producing) if tea production is greater than zero. We get the number of regions for each group, the mean proportion of Han births, and standard deviation of the proportion.
+
+```{r}
+
+china_han_1978 <- chinawomen %>% 
+  filter(biryr == 1978) %>%
+  group_by(tea_producing = if_else(teasown > 0, "Tea Producing", "Orchard Producing")) %>%
+  summarize(
+    count = n(),
+    mean = mean(han),
+    sd = sd(han)
+  )
+
+china_han_1978
+
+```
+
+We see that on average Han Chinese make up a greater proportion of orchard-producing regions than tea-producing ones (88% vs. 80%). However, we also see that there is significant variation in these values (the standard deviation of these proportions are 0.29 and 0.34, respectively)
+
+```{r}
+chinawomen %>%
+  filter(biryr == 1978) %>%
+  mutate(tea_producing = if_else(teasown > 0, "Tea Producing", "Orchard Producing")) %>%
+  ggplot(aes(x = han)) +
+    geom_histogram() +
+    facet_wrap(vars(tea_producing)) +
+    labs(x = "Proportion Han Chinese", y = "Count")
+```
+
+Comparing the populations of the two classes of regions, we see that the distributions are similarly left-skewed. We now look at the correlation between sex ratios and proportion of Han Chinese, controlling for kind of agricultural output:
+
+```{r}
+chinawomen %>%
+  filter(biryr == 1978) %>%
+  mutate(tea_producing = if_else(teasown > 0, "Tea Producing", "Orchard Producing")) %>%
+  group_by(tea_producing) %>%
+  summarize(correlation = cor(han, sex))
+
+```
+
+We see that there is almost no correlation between the proportion of Han Chinese and the male sex ratio for both orchard- and tea-producing regions.
+
+We now get the 95% CI for the difference in proportion of Han Chinese between tea- and orchard-producing regions in 1978. This time, we use the `t_test()` function from the `infer` package to simplify matters:
+
+```{r}
+chinawomen %>% 
+  filter(biryr == 1978, han >= 0.95) %>%
+  mutate(tea_producing = if_else(teasown > 0, "Tea Producing", "Orchard Producing")) %>%
+  t_test(formula = han ~ tea_producing, alternative = "two-sided", order = c("Tea Producing", "Orchard Producing"), conf_int = TRUE, conf_level = 0.95)
+
+```
+
+Our estimate for the difference in mean proportion of Han Chinese between tea and orchard-producing regions is -0.00023, with 95% CI of \[-0.0012, 0.00078\]. We note that this confidence interval does contain zero. This indicates that there is no statistically significant relationship between agricultural production and the proportion of Han Chinese.
+
+One potential confounder for our earlier inference in question 1 regarding differences in sex ratios was the proportion of Han Chinese. It may be that there are cultural differences in preferences over offspring, for example, between Han Chinese and other groups, and that Han Chinese are more likely to grow one type of crop rather than the other. However, we do not find a statistically significant difference in the proportion of Han Chinese between tea- and orchard-producing regions.
+
+## Question 4
+
+Repeat the analysis for the sex ratio in the previous question for each year before the reform, i.e., from 1962 until 1978. Create a graph which plots the difference-in-means estimates between the two regions and their 95% confidence intervals against years. Give a substantive interpretation of the plot.
+
+```{r}
+years <- 1962:1978
+diff_means_prereform <- diff_in_means_estimates(chinawomen, years)
+
+ggplot(diff_means_prereform, aes(x = as.factor(year), y = diff_means)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red", alpha = 0.7) +
+  geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), 
+                width = 0.3, 
+                color = "blue", 
+                alpha = 0.5) +
+  geom_point(color = "blue", size = 3) + 
+  labs(
+    title = "Difference in Mean Sex Ratios between Tea-Producing and \nNon-Tea Producing Regions, 1962 - 1978",
+    x = "Year",
+    y = "Difference in Mean Sex Ratio (Prop. Male Births)"
+  ) + 
+  theme_minimal() + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.grid.minor = element_blank()
+  )
+```
+
+The results show that for most years before the 1979 reforms, the difference in mean sex ratio between tea and non-tea-producing regions was positive--in other words, regions that grew tea had a higher ratio of male to female births than regions that did not grow tea. However, the effect in most years was not statistically distinguishable from zero.
+
+## Question 5
+
+We will adopt the difference-in-differences design by comparing the sex ratio in 1978 (right before the reform) with that in 1980 (right after the reform). Focus on a subset of counties that do not have missing observations in these two years. Compute the difference-in-differences estimate and its 95% confidence interval. Note that we assume independence across counties but account for possible dependence across years within each county. What substantive assumptions does the difference-in-differences design require? Give a substantive interpretation of the results.
+
+The difference-in-differences research design assumes identical time trends for both treatment and control regions. In other words, we assume that the male sex ratio is changing similarly over time in both tea and orchard-producing regions. One possibility we considered earlier was whether the proportion of tea and orchard-producing regions.
+
+The 1979 reforms raised production of agricultural cash crops, which we can see in the graph here:
+
+```{r, echo=FALSE}
+cashcrop_1979 <- sum(chinawomen$cashcrop[chinawomen$biryr == 1979])
+
+chinawomen %>%
+  group_by(biryr) %>%
+  summarize(cashcrop_all = sum(cashcrop) / cashcrop_1979) %>%
+  ggplot(aes(x = biryr)) +
+    geom_line(aes(y = cashcrop_all)) + 
+    ggtitle("Cash Crop Production") +
+    geom_vline(xintercept = 1979, linetype = 2) +
+    annotate("text", label = "Ag reforms\n enacted", x = 1981, y = 1.02, size = 3) +
+    labs(x = "Year", y = "Cash Crop Production (relative to 1979 levels)", title = "Cash Crop Production Declined, then Increased Sharply in 1980s")
+```
+
+```{r}
+
+teasown_1979 <- sum(chinawomen$teasown[chinawomen$biryr == 1979])
+
+chinawomen %>%
+  group_by(biryr) %>%
+  summarize(teasown = sum(teasown) / teasown_1979) %>%
+  ggplot(aes(x = biryr)) +
+    geom_line(aes(y = teasown)) + 
+    ggtitle("Tea Production") +
+    geom_vline(xintercept = 1979, linetype = 2) +
+    annotate("text", label = "Ag reforms\n enacted", x = 1981, y = 1.02, size = 3) +
+    labs(x = "Year", y = "Tea Sown (relative to 1979")
+```
+
+```{r}
+
+orch_1979 <- sum(chinawomen$orch[chinawomen$biryr == 1979])
+
+chinawomen %>%
+  group_by(biryr) %>%
+  summarize(orch = sum(orch) / orch_1979) %>%
+  ggplot(aes(x = biryr)) +
+    geom_line(aes(y = orch)) + 
+    ggtitle("Orchard Production") +
+    geom_vline(xintercept = 1979, linetype = 2) +
+    annotate("text", label = "Ag reforms\n enacted", x = 1981, y = 1.02, size = 3) +
+    labs(x = "Year", y = "Orchard Production (relative to 1979")
+```
+
+We compute the difference-in-differences estimate in two ways. The first is to just take the difference in means directly, while the second is to use a regression model.
+
+```{r}
+library(glue)
+# Get years
+china_diff_in_diff <- subset(chinawomen, subset = (chinawomen$biryr == 1978 | chinawomen$biryr == 1980))
+
+# Diff in diff approach (1)
+# Get tea regions 
+
+tea_data <- subset(china_diff_in_diff, subset = (china_diff_in_diff$teasown > 0))
+orchard_data <- subset(china_diff_in_diff, subset = (china_diff_in_diff$teasown == 0))
+
+tea_diff <- mean(tea_data$sex[tea_data$biryr == 1980]) - mean(tea_data$sex[tea_data$biryr == 1978])
+orchard_diff <- mean(orchard_data$sex[orchard_data$biryr == 1980]) - mean(orchard_data$sex[orchard_data$biryr == 1978])
+
+glue("Tea difference: ", tea_diff)
+glue("Orchard difference: ", orchard_diff)
+
+# Get difference in differences 
+
+glue("Difference-in-differences: ", tea_diff - orchard_diff)
+```
+
+On our first approach, therefore, we see that there was a greater increase in the sex ratio in orchard-growing regions than in tea-growing regions following the 1979 reforms. We now hand-compute the variance of our difference-in-difference estimate:
+
+We now use a regression model to assess the result. We model the difference-in-difference result using an interaction term between a pre/post-treatment dummy variable and a tea/non-tea producing dummy variable. We also include the proportion of Han Chinese as a covariate.
+
+```{r}
+
+china_diff_in_diff <- chinawomen[chinawomen$biryr == 1978 | chinawomen$biryr == 1980,]
+china_diff_in_diff$teasown_binary <- ifelse(china_diff_in_diff$teasown > 0, 1, 0)
+
+sex_ratio_model <- lm(formula = sex ~ han + teasown_binary * post, data = china_diff_in_diff)
+summary(sex_ratio_model)
+```
+
+The coefficient on `teasown_binary:post` gives us the DiD estimate of the policy change on sex ratios. This estimate (-0.003991) is very close to the first result (-0.003987). However, the standard error for this coefficient is 0.010, which indicates that this effect is not significantly different from zero.
+
+We can also manually compute the robust covariance matrix of the residuals and get the standard errors:
+
+```{r}
+
+resid_squared <- resid(sex_ratio_model)^2
+resid_diag <- diag(resid_squared)
+
+design_mat <- model.matrix(object = as.formula(sex ~ han + teasown_binary * post), data = china_diff_in_diff)
+
+x_t_x <- t(design_mat) %*% design_mat
+x_t_x_inv <- solve(x_t_x)
+
+var_hc <- x_t_x_inv %*% t(design_mat) %*% resid_diag %*% design_mat %*% x_t_x_inv
+sqrt(diag(var_hc))
+```
+
+We can also get the robust standard errors using the `lmtest` and `sandwich` packages
+
+```{r}
+library(lmtest)
+library(sandwich)
+
+robust <- coeftest(sex_ratio_model, vcov = vcovHC(sex_ratio_model, type = "HC1"))
+print(robust)
+```
