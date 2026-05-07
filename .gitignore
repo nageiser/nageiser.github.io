@@ -1,4 +1,24 @@
-.Rproj.user
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# R
+.Rproj.user/
 .Rhistory
 .RData
 .Ruserdata
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+.env
+
+# Quarto
+.quarto/
+_site/
+
+# Compilation logs
+*.log
