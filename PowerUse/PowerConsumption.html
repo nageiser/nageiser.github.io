@@ -1,0 +1,1330 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.5.57">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Predicting Power Usage with a Random Forest Model</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="PowerConsumption_files/libs/clipboard/clipboard.min.js"></script>
+<script src="PowerConsumption_files/libs/quarto-html/quarto.js"></script>
+<script src="PowerConsumption_files/libs/quarto-html/popper.min.js"></script>
+<script src="PowerConsumption_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="PowerConsumption_files/libs/quarto-html/anchor.min.js"></script>
+<link href="PowerConsumption_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="PowerConsumption_files/libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="PowerConsumption_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="PowerConsumption_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="PowerConsumption_files/libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="fullcontent">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Predicting Power Usage with a Random Forest Model</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<div class="cell">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Necessary libraries</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>
+Attaching package: 'dplyr'</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following objects are masked from 'package:stats':
+
+    filter, lag</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following objects are masked from 'package:base':
+
+    intersect, setdiff, setequal, union</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(lubridate)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>
+Attaching package: 'lubridate'</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following objects are masked from 'package:base':
+
+    date, intersect, setdiff, union</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidyr)</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ranger)</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(xgboost)</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>df_train <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">"./data/df_train.csv"</span>)</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>df_test <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">"./data/df_test.csv"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<section id="preparation" class="level2">
+<h2 class="anchored" data-anchor-id="preparation">Preparation</h2>
+<p>Preview the data:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">glimpse</span>(df_train)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Rows: 1,202
+Columns: 9
+$ date              &lt;chr&gt; "12/16/2006", "12/17/2006", "12/18/2006", "12/19/200…
+$ power_consumption &lt;dbl&gt; 1209.176, 3390.460, 2203.826, 1666.194, 2225.748, 17…
+$ year              &lt;int&gt; 2006, 2006, 2006, 2006, 2006, 2006, 2006, 2006, 2006…
+$ semester          &lt;int&gt; 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1…
+$ quarter           &lt;int&gt; 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1…
+$ day_in_week       &lt;chr&gt; "Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sa…
+$ week_in_year      &lt;int&gt; 50, 51, 51, 51, 51, 51, 51, 51, 52, 52, 52, 52, 52, …
+$ day_in_year       &lt;int&gt; 350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 36…
+$ month             &lt;int&gt; 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, …</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">glimpse</span>(df_test)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Rows: 240
+Columns: 9
+$ date              &lt;chr&gt; "4/1/2010", "4/2/2010", "4/3/2010", "4/4/2010", "4/5…
+$ power_consumption &lt;dbl&gt; 1687.440, 1648.622, 1805.278, 1690.388, 1118.820, 18…
+$ year              &lt;int&gt; 2010, 2010, 2010, 2010, 2010, 2010, 2010, 2010, 2010…
+$ semester          &lt;int&gt; 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1…
+$ quarter           &lt;int&gt; 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2…
+$ day_in_week       &lt;chr&gt; "Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed", "Th…
+$ week_in_year      &lt;int&gt; 13, 14, 14, 14, 14, 14, 14, 14, 15, 15, 15, 15, 15, …
+$ day_in_year       &lt;int&gt; 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 1…
+$ month             &lt;int&gt; 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4…</code></pre>
+</div>
+</div>
+<p>Define <code>prepare_features</code> to format test and train data sets and one-hot encode categorical variables for the gradient-boosted tree:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>prepare_features <span class="ot">&lt;-</span> <span class="cf">function</span>(df, fmla) {</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>  df <span class="ot">&lt;-</span> df <span class="sc">%&gt;%</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">select</span>(<span class="sc">-</span>year) <span class="sc">%&gt;%</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="at">date =</span> <span class="fu">as.Date</span>(date, <span class="at">format =</span> <span class="st">"%m/%d/%Y"</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="fu">across</span>(<span class="fu">c</span>(semester, quarter, day_in_week, week_in_year, day_in_year, month), as.factor))</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>  encoded_df <span class="ot">&lt;-</span> <span class="fu">as.data.frame</span>(<span class="fu">model.matrix</span>(fmla, <span class="at">data =</span> df))</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>  df <span class="ot">&lt;-</span> df <span class="sc">%&gt;%</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">bind_cols</span>(encoded_df)</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(df)</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>Format and extract features from the test and train data:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>fmla <span class="ot">&lt;-</span> <span class="fu">as.formula</span>(<span class="st">"power_consumption ~ semester + quarter + day_in_week + week_in_year + day_in_year + month - 1"</span>)</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>df_test <span class="ot">&lt;-</span> <span class="fu">prepare_features</span>(df_test, fmla)</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>df_train <span class="ot">&lt;-</span> <span class="fu">prepare_features</span>(df_train, fmla)</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>df_train_features <span class="ot">&lt;-</span> df_train <span class="sc">%&gt;%</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="sc">-</span><span class="fu">c</span>(date, power_consumption, semester, quarter, day_in_week, week_in_year, day_in_year, month))</span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>df_test_features <span class="ot">&lt;-</span> df_test <span class="sc">%&gt;%</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="sc">-</span><span class="fu">c</span>(date, power_consumption, semester, quarter, day_in_week, week_in_year, day_in_year, month))</span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>outcome_train <span class="ot">&lt;-</span> df_train[<span class="st">"power_consumption"</span>]</span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a>outcome_test <span class="ot">&lt;-</span> df_test[<span class="st">"power_consumption"</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="train-models" class="level2">
+<h2 class="anchored" data-anchor-id="train-models">Train Models</h2>
+<p>Train baseline linear model:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>model.lm <span class="ot">&lt;-</span> <span class="fu">lm</span>(fmla, <span class="at">data =</span> df_train)</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(model.lm)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Call:
+lm(formula = fmla, data = df_train)
+
+Residuals:
+     Min       1Q   Median       3Q      Max 
+-1951.72  -225.09     2.15   213.93  1909.91 
+
+Coefficients: (57 not defined because of singularities)
+                 Estimate Std. Error t value Pr(&gt;|t|)    
+semester1       2103.6178   239.8578   8.770  &lt; 2e-16 ***
+semester2       2506.9465  1761.2709   1.423 0.155008    
+quarter2        1049.7590  1009.3005   1.040 0.298607    
+quarter3        -284.0107  1009.3041  -0.281 0.778480    
+quarter4               NA         NA      NA       NA    
+day_in_weekMon  -141.5604    56.6460  -2.499 0.012648 *  
+day_in_weekSat   305.6836    57.3554   5.330 1.27e-07 ***
+day_in_weekSun   217.0414    58.1932   3.730 0.000205 ***
+day_in_weekThu  -177.9674    57.4799  -3.096 0.002027 ** 
+day_in_weekTue    44.7425    56.5327   0.791 0.428914    
+day_in_weekWed    41.0970    58.1425   0.707 0.479871    
+week_in_year2   -231.3910   336.2884  -0.688 0.491601    
+week_in_year3    197.6170   336.2884   0.588 0.556935    
+week_in_year4    469.3215   336.2884   1.396 0.163215    
+week_in_year5    540.8343   645.6810   0.838 0.402489    
+week_in_year6    358.6168   645.6810   0.555 0.578767    
+week_in_year7     23.4593   645.6810   0.036 0.971026    
+week_in_year8   -945.4147   645.6810  -1.464 0.143519    
+week_in_year9   -674.2055   336.2884  -2.005 0.045308 *  
+week_in_year10   275.8085   336.2884   0.820 0.412366    
+week_in_year11  -315.4390   336.2884  -0.938 0.348520    
+week_in_year12   119.0920   336.2884   0.354 0.723328    
+week_in_year13  -584.4874   531.8135  -1.099 0.272071    
+week_in_year14 -1147.0722   686.7819  -1.670 0.095259 .  
+week_in_year15 -1530.5542   686.7819  -2.229 0.026112 *  
+week_in_year16 -1076.4675   686.7819  -1.567 0.117405    
+week_in_year17 -1933.2462   686.7819  -2.815 0.004996 ** 
+week_in_year18 -1606.8407   901.2658  -1.783 0.074977 .  
+week_in_year19 -1744.7067   901.2658  -1.936 0.053231 .  
+week_in_year20 -1777.9027   901.2658  -1.973 0.048868 *  
+week_in_year21 -1550.5500   901.2658  -1.720 0.085735 .  
+week_in_year22 -1679.3642  1073.4333  -1.564 0.118091    
+week_in_year23 -1769.0675  1073.4333  -1.648 0.099726 .  
+week_in_year24 -1779.5195  1073.4333  -1.658 0.097744 .  
+week_in_year25 -2025.1275  1073.4333  -1.887 0.059569 .  
+week_in_year26 -2207.6204  1141.8507  -1.933 0.053535 .  
+week_in_year27 -2137.6235  1221.9252  -1.749 0.080598 .  
+week_in_year28 -2315.5722  1221.9252  -1.895 0.058441 .  
+week_in_year29 -2149.3189  1221.9252  -1.759 0.078957 .  
+week_in_year30 -2556.9402  1221.9252  -2.093 0.036696 *  
+week_in_year31 -1569.0132  1353.0398  -1.160 0.246541    
+week_in_year32 -1566.8178  1353.0398  -1.158 0.247202    
+week_in_year33 -1520.6385  1353.0398  -1.124 0.261398    
+week_in_year34 -1478.9865  1353.0398  -1.093 0.274678    
+week_in_year35  -884.1978  1473.0248  -0.600 0.548499    
+week_in_year36  -758.4052  1473.0248  -0.515 0.606788    
+week_in_year37  -564.0972  1473.0248  -0.383 0.701855    
+week_in_year38  -790.7472  1473.0248  -0.537 0.591538    
+week_in_year39  -664.8738  1473.0248  -0.451 0.651845    
+week_in_year40  -811.4725  1581.7792  -0.513 0.608081    
+week_in_year41  -850.5652  1581.7792  -0.538 0.590912    
+week_in_year42  -735.7159  1581.7792  -0.465 0.641970    
+week_in_year43 -1827.1299  1581.7792  -1.155 0.248382    
+week_in_year44 -1081.3435  1684.4398  -0.642 0.521078    
+week_in_year45  -453.2109  1684.4398  -0.269 0.787953    
+week_in_year46  -344.1495  1684.4398  -0.204 0.838161    
+week_in_year47  -263.4635  1684.4398  -0.156 0.875748    
+week_in_year48  -243.0079  1782.6177  -0.136 0.891601    
+week_in_year49  -563.9472  1782.6177  -0.316 0.751811    
+week_in_year50  -822.0824  1777.1213  -0.463 0.643779    
+week_in_year51    50.8486  1777.1213   0.029 0.977180    
+week_in_year52  -523.8604  1777.1213  -0.295 0.768236    
+week_in_year53  -583.8556  1823.8726  -0.320 0.748960    
+day_in_year2    -564.0766   336.2876  -1.677 0.093852 .  
+day_in_year3    -569.8035   336.6171  -1.693 0.090886 .  
+day_in_year4     195.8513   335.9482   0.583 0.560067    
+day_in_year5      24.2638   335.9479   0.072 0.942441    
+day_in_year6    -555.6080   336.6173  -1.651 0.099211 .  
+day_in_year7     -89.9835   336.2884  -0.268 0.789091    
+day_in_year8     125.3165   336.2884   0.373 0.709508    
+day_in_year9     -24.3336   336.6163  -0.072 0.942390    
+day_in_year10    196.3820   335.9473   0.585 0.559003    
+day_in_year11     17.3158   335.9496   0.052 0.958906    
+day_in_year12   -123.3133   336.6164  -0.366 0.714212    
+day_in_year13     38.3995   336.2840   0.114 0.909117    
+day_in_year14          NA         NA      NA       NA    
+day_in_year15    -83.4340   336.2884  -0.248 0.804117    
+day_in_year16   -214.3851   336.6163  -0.637 0.524379    
+day_in_year17     13.3880   335.9473   0.040 0.968221    
+day_in_year18    -14.6777   335.9496  -0.044 0.965162    
+day_in_year19   -454.9213   336.6164  -1.351 0.176923    
+day_in_year20   -212.4120   336.2840  -0.632 0.527795    
+day_in_year21          NA         NA      NA       NA    
+day_in_year22   -620.8695   336.2884  -1.846 0.065217 .  
+day_in_year23   -626.0716   336.6163  -1.860 0.063258 .  
+day_in_year24   -393.6365   335.9473  -1.172 0.241649    
+day_in_year25   -394.7242   335.9496  -1.175 0.240355    
+day_in_year26   -576.4068   336.6164  -1.712 0.087209 .  
+day_in_year27   -572.1380   336.2840  -1.701 0.089256 .  
+day_in_year28          NA         NA      NA       NA    
+day_in_year29   -494.4118   645.6810  -0.766 0.444062    
+day_in_year30   -679.7804   646.2728  -1.052 0.293179    
+day_in_year31   -383.4853   644.7945  -0.595 0.552181    
+day_in_year32   -774.8812   335.9496  -2.307 0.021329 *  
+day_in_year33   -476.7563   336.6164  -1.416 0.157062    
+day_in_year34     53.6170   336.2840   0.159 0.873362    
+day_in_year35          NA         NA      NA       NA    
+day_in_year36   -298.3225   336.2884  -0.887 0.375283    
+day_in_year37   -505.2281   336.6163  -1.501 0.133766    
+day_in_year38   -279.0185   335.9473  -0.831 0.406474    
+day_in_year39   -178.5557   335.9496  -0.531 0.595219    
+day_in_year40   -423.1533   336.6164  -1.257 0.209083    
+day_in_year41   -259.9875   336.2840  -0.773 0.439675    
+day_in_year42          NA         NA      NA       NA    
+day_in_year43      2.1725   336.2884   0.006 0.994847    
+day_in_year44   -257.0156   336.6163  -0.764 0.445369    
+day_in_year45    -64.1075   335.9473  -0.191 0.848709    
+day_in_year46    -54.2392   335.9496  -0.161 0.871778    
+day_in_year47   -258.9503   336.6164  -0.769 0.441952    
+day_in_year48   -438.7970   336.2840  -1.305 0.192313    
+day_in_year49          NA         NA      NA       NA    
+day_in_year50    790.3725   336.2884   2.350 0.018995 *  
+day_in_year51   1189.7484   336.6163   3.534 0.000432 ***
+day_in_year52    814.9255   335.9473   2.426 0.015491 *  
+day_in_year53   1199.8443   335.9496   3.572 0.000376 ***
+day_in_year54    753.9637   336.6164   2.240 0.025369 *  
+day_in_year55    237.2805   336.2840   0.706 0.480640    
+day_in_year56          NA         NA      NA       NA    
+day_in_year57   -143.7762   643.8391  -0.223 0.823349    
+day_in_year58   -178.8048   643.5879  -0.278 0.781217    
+day_in_year59   -553.9957   644.3710  -0.860 0.390180    
+day_in_year60     32.7225   362.7181   0.090 0.928139    
+day_in_year61   -506.1508   336.6164  -1.504 0.133058    
+day_in_year62   -390.0200   336.2840  -1.160 0.246470    
+day_in_year63          NA         NA      NA       NA    
+day_in_year64   -584.5150   336.2884  -1.738 0.082562 .  
+day_in_year65  -1011.8336   336.6163  -3.006 0.002729 ** 
+day_in_year66   -489.0520   335.9473  -1.456 0.145847    
+day_in_year67   -266.4667   335.9496  -0.793 0.427905    
+day_in_year68   -689.9078   336.6164  -2.050 0.040727 *  
+day_in_year69   -605.5645   336.2840  -1.801 0.072109 .  
+day_in_year70          NA         NA      NA       NA    
+day_in_year71    201.3660   336.2884   0.599 0.549479    
+day_in_year72   -162.8331   336.6163  -0.484 0.628703    
+day_in_year73    -88.4875   335.9473  -0.263 0.792311    
+day_in_year74    194.6793   335.9496   0.579 0.562418    
+day_in_year75   -301.4613   336.6164  -0.896 0.370749    
+day_in_year76      2.4525   336.2840   0.007 0.994183    
+day_in_year77          NA         NA      NA       NA    
+day_in_year78   -422.7635   336.2884  -1.257 0.209059    
+day_in_year79  -1073.0121   336.6163  -3.188 0.001489 ** 
+day_in_year80   -758.5060   335.9473  -2.258 0.024220 *  
+day_in_year81   -489.7932   335.9496  -1.458 0.145241    
+day_in_year82   -654.6423   336.6164  -1.945 0.052144 .  
+day_in_year83   -137.1300   336.2840  -0.408 0.683541    
+day_in_year84          NA         NA      NA       NA    
+day_in_year85    123.1224   531.8135   0.232 0.816973    
+day_in_year86    -41.8842   532.6463  -0.079 0.937343    
+day_in_year87    325.3834   532.6459   0.611 0.541447    
+day_in_year88    335.2957   531.8145   0.630 0.528560    
+day_in_year89    243.0157   531.8533   0.457 0.647848    
+day_in_year90    679.5250   532.6667   1.276 0.202421    
+day_in_year91          NA         NA      NA       NA    
+day_in_year92    481.0911   388.5015   1.238 0.215950    
+day_in_year93     15.4122   388.5242   0.040 0.968367    
+day_in_year94    212.4556   388.4710   0.547 0.584595    
+day_in_year95     82.3207   388.4739   0.212 0.832232    
+day_in_year96     98.2456   388.5246   0.253 0.800433    
+day_in_year97   -147.6032   388.4945  -0.380 0.704091    
+day_in_year98          NA         NA      NA       NA    
+day_in_year99    802.8211   388.5015   2.066 0.039099 *  
+day_in_year100   112.4202   388.5242   0.289 0.772385    
+day_in_year101   414.5436   388.4710   1.067 0.286234    
+day_in_year102   367.3593   388.4739   0.946 0.344607    
+day_in_year103   456.7689   388.5246   1.176 0.240076    
+day_in_year104   102.0315   388.4945   0.263 0.792899    
+day_in_year105         NA         NA      NA       NA    
+day_in_year106  -105.1282   388.5015  -0.271 0.786767    
+day_in_year107   -35.9072   388.5242  -0.092 0.926387    
+day_in_year108  -346.6431   388.4710  -0.892 0.372480    
+day_in_year109  -213.0160   388.4739  -0.548 0.583607    
+day_in_year110  -126.2711   388.5246  -0.325 0.745263    
+day_in_year111     4.9048   388.4945   0.013 0.989930    
+day_in_year112         NA         NA      NA       NA    
+day_in_year113   630.4444   388.5015   1.623 0.105025    
+day_in_year114   430.1608   388.5242   1.107 0.268547    
+day_in_year115   651.4169   388.4710   1.677 0.093948 .  
+day_in_year116   692.8660   388.4739   1.784 0.074865 .  
+day_in_year117   325.9496   388.5246   0.839 0.401746    
+day_in_year118   -12.4192   388.4945  -0.032 0.974506    
+day_in_year119         NA         NA      NA       NA    
+day_in_year120   438.8716   702.2399   0.625 0.532171    
+day_in_year121    -1.4946   434.9402  -0.003 0.997259    
+day_in_year122  -632.5878   388.4710  -1.628 0.103823    
+day_in_year123  -181.5167   388.4739  -0.467 0.640441    
+day_in_year124  -303.6244   388.5246  -0.781 0.434745    
+day_in_year125  -168.1105   388.4945  -0.433 0.665330    
+day_in_year126         NA         NA      NA       NA    
+day_in_year127   144.1051   388.5015   0.371 0.710789    
+day_in_year128   149.3702   388.5242   0.384 0.700741    
+day_in_year129   195.4036   388.4710   0.503 0.615095    
+day_in_year130    31.2907   388.4739   0.081 0.935821    
+day_in_year131   -15.8091   388.5246  -0.041 0.967553    
+day_in_year132   -59.2625   388.4945  -0.153 0.878795    
+day_in_year133         NA         NA      NA       NA    
+day_in_year134   212.4238   388.5015   0.547 0.584681    
+day_in_year135  -121.3778   388.5242  -0.312 0.754810    
+day_in_year136   168.3676   388.4710   0.433 0.664830    
+day_in_year137    65.1207   388.4739   0.168 0.866914    
+day_in_year138    48.5309   388.5246   0.125 0.900625    
+day_in_year139    31.3675   388.4945   0.081 0.935667    
+day_in_year140         NA         NA      NA       NA    
+day_in_year141  -106.6336   388.5015  -0.274 0.783790    
+day_in_year142  -475.1005   388.5242  -1.223 0.221744    
+day_in_year143  -355.8811   388.4710  -0.916 0.359880    
+day_in_year144  -327.7387   388.4739  -0.844 0.399107    
+day_in_year145  -162.2877   388.5246  -0.418 0.676274    
+day_in_year146  -180.0912   388.4945  -0.464 0.643085    
+day_in_year147         NA         NA      NA       NA    
+day_in_year148   105.2999   701.0760   0.150 0.880646    
+day_in_year149  -384.0237   700.9996  -0.548 0.583963    
+day_in_year150   -83.1849   699.8192  -0.119 0.905410    
+day_in_year151  -410.3932   701.0462  -0.585 0.558439    
+day_in_year152  -159.1435   434.3125  -0.366 0.714142    
+day_in_year153  -188.5432   388.4945  -0.485 0.627581    
+day_in_year154         NA         NA      NA       NA    
+day_in_year155  -111.0162   388.5015  -0.286 0.775138    
+day_in_year156    13.1322   388.5242   0.034 0.973045    
+day_in_year157   -10.8584   388.4710  -0.028 0.977707    
+day_in_year158  -260.6313   388.4739  -0.671 0.502466    
+day_in_year159   297.4183   388.5246   0.766 0.444190    
+day_in_year160  -261.8032   388.4945  -0.674 0.500570    
+day_in_year161         NA         NA      NA       NA    
+day_in_year162  -228.1309   388.5015  -0.587 0.557226    
+day_in_year163  -354.5692   388.5242  -0.913 0.361718    
+day_in_year164  -696.5211   388.4710  -1.793 0.073344 .  
+day_in_year165  -342.4273   388.4739  -0.881 0.378323    
+day_in_year166  -379.7544   388.5246  -0.977 0.328646    
+day_in_year167   375.5388   388.4945   0.967 0.334003    
+day_in_year168         NA         NA      NA       NA    
+day_in_year169   -40.2349   388.5015  -0.104 0.917540    
+day_in_year170   117.4155   388.5242   0.302 0.762569    
+day_in_year171    71.9689   388.4710   0.185 0.853069    
+day_in_year172   -28.5433   388.4739  -0.073 0.941446    
+day_in_year173   -51.4084   388.5246  -0.132 0.894766    
+day_in_year174  -289.6732   388.4945  -0.746 0.456105    
+day_in_year175         NA         NA      NA       NA    
+day_in_year176   345.1774   549.0599   0.629 0.529740    
+day_in_year177   186.9638   550.0856   0.340 0.734033    
+day_in_year178   413.2718   550.1070   0.751 0.452713    
+day_in_year179   411.2136   550.0316   0.748 0.454905    
+day_in_year180   173.9132   549.0860   0.317 0.751527    
+day_in_year181   -42.5416   550.1065  -0.077 0.938377    
+day_in_year182         NA         NA      NA       NA    
+day_in_year183   169.7811   388.5015   0.437 0.662215    
+day_in_year184   -68.2898   388.5242  -0.176 0.860520    
+day_in_year185    -6.2558   388.4710  -0.016 0.987156    
+day_in_year186    60.2267   388.4739   0.155 0.876833    
+day_in_year187    46.1523   388.5246   0.119 0.905472    
+day_in_year188   171.8822   388.4945   0.442 0.658294    
+day_in_year189         NA         NA      NA       NA    
+day_in_year190   256.9878   388.5015   0.661 0.508487    
+day_in_year191    90.8248   388.5242   0.234 0.815223    
+day_in_year192    47.4456   388.4710   0.122 0.902823    
+day_in_year193    47.2520   388.4739   0.122 0.903218    
+day_in_year194   -66.8631   388.5246  -0.172 0.863405    
+day_in_year195    76.4802   388.4945   0.197 0.843984    
+day_in_year196         NA         NA      NA       NA    
+day_in_year197   -90.4442   388.5015  -0.233 0.815973    
+day_in_year198  -237.5145   388.5242  -0.611 0.541154    
+day_in_year199   -93.8018   388.4710  -0.241 0.809256    
+day_in_year200   -17.0553   388.4739  -0.044 0.964992    
+day_in_year201   -67.4691   388.5246  -0.174 0.862180    
+day_in_year202  -302.3765   388.4945  -0.778 0.436600    
+day_in_year203         NA         NA      NA       NA    
+day_in_year204   367.9011   388.5015   0.947 0.343931    
+day_in_year205   103.8235   388.5242   0.267 0.789363    
+day_in_year206     0.5142   388.4710   0.001 0.998944    
+day_in_year207   120.5447   388.4739   0.310 0.756409    
+day_in_year208   203.4329   388.5246   0.524 0.600696    
+day_in_year209   390.7662   388.4945   1.006 0.314786    
+day_in_year210         NA         NA      NA       NA    
+day_in_year211  -731.8793   699.8557  -1.046 0.295981    
+day_in_year212  -631.2975   701.1001  -0.900 0.368151    
+day_in_year213   -61.4357   434.2723  -0.141 0.887535    
+day_in_year214   -35.1500   388.4739  -0.090 0.927926    
+day_in_year215  -136.5924   388.5246  -0.352 0.725253    
+day_in_year216  -241.2985   388.4945  -0.621 0.534699    
+day_in_year217         NA         NA      NA       NA    
+day_in_year218   134.2058   388.5015   0.345 0.729849    
+day_in_year219   -19.5098   388.5242  -0.050 0.959963    
+day_in_year220  -167.8844   388.4710  -0.432 0.665734    
+day_in_year221     3.7873   388.4739   0.010 0.992224    
+day_in_year222    -9.8364   388.5246  -0.025 0.979808    
+day_in_year223  -164.8365   388.4945  -0.424 0.671462    
+day_in_year224         NA         NA      NA       NA    
+day_in_year225   -45.5309   388.5015  -0.117 0.906733    
+day_in_year226  -191.2018   388.5242  -0.492 0.622764    
+day_in_year227   115.7169   388.4710   0.298 0.765872    
+day_in_year228   -16.4760   388.4739  -0.042 0.966180    
+day_in_year229  -184.5751   388.5246  -0.475 0.634866    
+day_in_year230  -441.4432   388.4945  -1.136 0.256166    
+day_in_year231         NA         NA      NA       NA    
+day_in_year232    26.2898   388.5015   0.068 0.946065    
+day_in_year233  -199.4125   388.5242  -0.513 0.607910    
+day_in_year234    88.6196   388.4710   0.228 0.819607    
+day_in_year235   -59.3673   388.4739  -0.153 0.878576    
+day_in_year236   137.9383   388.5246   0.355 0.722658    
+day_in_year237  -267.8112   388.4945  -0.689 0.490794    
+day_in_year238         NA         NA      NA       NA    
+day_in_year239  -625.3309   702.1937  -0.891 0.373438    
+day_in_year240  -693.8058   702.2758  -0.988 0.323474    
+day_in_year241  -711.2331   702.1545  -1.013 0.311393    
+day_in_year242  -423.4080   701.0064  -0.604 0.546011    
+day_in_year243  -572.6311   702.2603  -0.815 0.415074    
+day_in_year244  -172.9401   434.9165  -0.398 0.690999    
+day_in_year245         NA         NA      NA       NA    
+day_in_year246  -148.1809   388.5015  -0.381 0.702993    
+day_in_year247  -160.5378   388.5242  -0.413 0.679569    
+day_in_year248  -195.5824   388.4710  -0.503 0.614771    
+day_in_year249  -476.2007   388.4739  -1.226 0.220617    
+day_in_year250   -43.7291   388.5246  -0.113 0.910414    
+day_in_year251  -344.1325   388.4945  -0.886 0.375979    
+day_in_year252         NA         NA      NA       NA    
+day_in_year253  -437.4489   388.5015  -1.126 0.260499    
+day_in_year254  -521.2912   388.5242  -1.342 0.180058    
+day_in_year255  -254.8311   388.4710  -0.656 0.512018    
+day_in_year256  -302.0480   388.4739  -0.778 0.437074    
+day_in_year257  -266.2917   388.5246  -0.685 0.493290    
+day_in_year258  -471.8465   388.4945  -1.215 0.224887    
+day_in_year259         NA         NA      NA       NA    
+day_in_year260   -38.4356   388.5015  -0.099 0.921216    
+day_in_year261  -107.2145   388.5242  -0.276 0.782654    
+day_in_year262   158.1016   388.4710   0.407 0.684126    
+day_in_year263   158.0220   388.4739   0.407 0.684278    
+day_in_year264  -166.4804   388.5246  -0.428 0.668404    
+day_in_year265  -302.7518   388.4945  -0.779 0.436031    
+day_in_year266         NA         NA      NA       NA    
+day_in_year267  -128.6082   388.5015  -0.331 0.740701    
+day_in_year268   -38.7725   388.5242  -0.100 0.920532    
+day_in_year269  -111.0871   388.4710  -0.286 0.774981    
+day_in_year270  -159.5793   388.4739  -0.411 0.681337    
+day_in_year271    89.6969   388.5246   0.231 0.817477    
+day_in_year272   -22.5432   388.4945  -0.058 0.953741    
+day_in_year273         NA         NA      NA       NA    
+day_in_year274   -81.1998   434.2614  -0.187 0.851720    
+day_in_year275   -32.3652   388.5242  -0.083 0.933631    
+day_in_year276  -353.8098   388.4710  -0.911 0.362681    
+day_in_year277  -174.0273   388.4739  -0.448 0.654288    
+day_in_year278  -209.7217   388.5246  -0.540 0.589488    
+day_in_year279  -355.9938   388.4945  -0.916 0.359757    
+day_in_year280         NA         NA      NA       NA    
+day_in_year281  -148.0376   388.5015  -0.381 0.703267    
+day_in_year282  -101.1392   388.5242  -0.260 0.794685    
+day_in_year283   -41.0924   388.4710  -0.106 0.915783    
+day_in_year284    10.7067   388.4739   0.028 0.978019    
+day_in_year285  -115.5011   388.5246  -0.297 0.766327    
+day_in_year286  -133.8578   388.4945  -0.345 0.730517    
+day_in_year287         NA         NA      NA       NA    
+day_in_year288  -274.0916   388.5015  -0.706 0.480694    
+day_in_year289    29.9788   388.5242   0.077 0.938514    
+day_in_year290    90.4849   388.4710   0.233 0.815877    
+day_in_year291  -186.6387   388.4739  -0.480 0.631042    
+day_in_year292    22.4669   388.5246   0.058 0.953901    
+day_in_year293  -224.9672   388.4945  -0.579 0.562698    
+day_in_year294         NA         NA      NA       NA    
+day_in_year295  1067.6424   388.5015   2.748 0.006126 ** 
+day_in_year296  1028.0295   388.5242   2.646 0.008301 ** 
+day_in_year297  1317.8482   388.4710   3.392 0.000726 ***
+day_in_year298  1388.8087   388.4739   3.575 0.000371 ***
+day_in_year299   573.5883   388.5246   1.476 0.140241    
+day_in_year300   223.4295   388.4945   0.575 0.565370    
+day_in_year301         NA         NA      NA       NA    
+day_in_year302   -98.8652   700.9316  -0.141 0.887866    
+day_in_year303  -198.1455   699.7819  -0.283 0.777131    
+day_in_year304  -112.2001   700.9856  -0.160 0.872873    
+day_in_year305  -189.3477   434.2256  -0.436 0.662909    
+day_in_year306  -134.7684   388.5246  -0.347 0.728776    
+day_in_year307  -305.3745   388.4945  -0.786 0.432068    
+day_in_year308         NA         NA      NA       NA    
+day_in_year309  -334.9156   388.5015  -0.862 0.388901    
+day_in_year310   206.3375   388.5242   0.531 0.595507    
+day_in_year311  -360.4491   388.4710  -0.928 0.353750    
+day_in_year312  -104.5780   388.4739  -0.269 0.787842    
+day_in_year313  -252.6377   388.5246  -0.650 0.515713    
+day_in_year314   108.6495   388.4945   0.280 0.779803    
+day_in_year315         NA         NA      NA       NA    
+day_in_year316    39.9524   388.5015   0.103 0.918117    
+day_in_year317  -127.3705   388.5242  -0.328 0.743123    
+day_in_year318  -183.9978   388.4710  -0.474 0.635878    
+day_in_year319  -396.0433   388.4739  -1.019 0.308273    
+day_in_year320   153.8789   388.5246   0.396 0.692164    
+day_in_year321   -37.9125   388.4945  -0.098 0.922283    
+day_in_year322         NA         NA      NA       NA    
+day_in_year323  -416.6036   388.5015  -1.072 0.283885    
+day_in_year324  -220.2925   388.5242  -0.567 0.570871    
+day_in_year325  -233.3111   388.4710  -0.601 0.548280    
+day_in_year326  -151.3127   388.4739  -0.390 0.697003    
+day_in_year327  -310.3877   388.5246  -0.799 0.424587    
+day_in_year328   131.2062   388.4945   0.338 0.735653    
+day_in_year329         NA         NA      NA       NA    
+day_in_year330  -128.8459   702.1937  -0.183 0.854459    
+day_in_year331  -307.4542   702.2758  -0.438 0.661649    
+day_in_year332  -278.7401   702.1545  -0.397 0.691487    
+day_in_year333  -438.8110   701.0064  -0.626 0.531507    
+day_in_year334   -62.0174   702.2603  -0.088 0.929651    
+day_in_year335     6.5083   434.9165   0.015 0.988064    
+day_in_year336         NA         NA      NA       NA    
+day_in_year337  -173.0069   388.5015  -0.445 0.656207    
+day_in_year338  -126.9145   388.5242  -0.327 0.744010    
+day_in_year339    81.9029   388.4710   0.211 0.833069    
+day_in_year340   352.2560   388.4739   0.907 0.364796    
+day_in_year341    14.1229   388.5246   0.036 0.971012    
+day_in_year342    96.8542   388.4945   0.249 0.803186    
+day_in_year343         NA         NA      NA       NA    
+day_in_year344   345.4590   363.4809   0.950 0.342180    
+day_in_year345   353.3847   363.4698   0.972 0.331211    
+day_in_year346  -128.8139   363.0716  -0.355 0.722839    
+day_in_year347   236.1426   363.4612   0.650 0.516065    
+day_in_year348   125.5095   363.1255   0.346 0.729704    
+day_in_year349   352.3507   363.0815   0.970 0.332111    
+day_in_year350         NA         NA      NA       NA    
+day_in_year351  -367.9096   336.2471  -1.094 0.274204    
+day_in_year352  -376.2369   336.2618  -1.119 0.263519    
+day_in_year353  -660.3040   336.2288  -1.964 0.049885 *  
+day_in_year354  -777.3919   336.2299  -2.312 0.021020 *  
+day_in_year355  -560.1671   336.2639  -1.666 0.096124 .  
+day_in_year356  -328.6035   336.2464  -0.977 0.328724    
+day_in_year357         NA         NA      NA       NA    
+day_in_year358   409.3104   336.2471   1.217 0.223844    
+day_in_year359   239.6876   336.2618   0.713 0.476172    
+day_in_year360   403.3065   336.2288   1.200 0.230680    
+day_in_year361  -133.0934   336.2299  -0.396 0.692326    
+day_in_year362   583.3629   336.2639   1.735 0.083146 .  
+day_in_year363   398.0365   336.2464   1.184 0.236849    
+day_in_year364         NA         NA      NA       NA    
+day_in_year365   370.8120   532.6218   0.696 0.486500    
+day_in_year366         NA         NA      NA       NA    
+month2          -128.7868   550.1150  -0.234 0.814959    
+month3                 NA         NA      NA       NA    
+month4          -484.4126   825.8132  -0.587 0.557641    
+month5            20.9172   583.5005   0.036 0.971412    
+month6                 NA         NA      NA       NA    
+month7           978.1184   825.8099   1.184 0.236584    
+month8           117.7747   583.5096   0.202 0.840093    
+month9                 NA         NA      NA       NA    
+month10           49.5767   824.0718   0.060 0.952042    
+month11          -86.1003   583.5096  -0.148 0.882729    
+month12                NA         NA      NA       NA    
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Residual standard error: 474.7 on 820 degrees of freedom
+Multiple R-squared:  0.9477,    Adjusted R-squared:  0.9233 
+F-statistic: 38.88 on 382 and 820 DF,  p-value: &lt; 2.2e-16</code></pre>
+</div>
+</div>
+<p>Train random forest (RF) model using <code>ranger</code>. <code>mtry</code> is set to <code>floor(p/3)</code> per the standard regression heuristic. OOB error serves as a built-in cross-validation estimate — no separate validation loop is needed:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1221</span>)</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>model.rf <span class="ot">&lt;-</span> <span class="fu">ranger</span>(<span class="at">formula =</span> fmla,</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>                   <span class="at">data =</span> df_train,</span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>                   <span class="at">num.trees =</span> <span class="dv">500</span>)</span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>df_test<span class="sc">$</span>pred.lm <span class="ot">&lt;-</span> <span class="fu">predict</span>(model.lm, <span class="at">newdata =</span> df_test)</span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>df_test<span class="sc">$</span>pred.rf <span class="ot">&lt;-</span> <span class="fu">predict</span>(model.rf, <span class="at">data =</span> df_test)<span class="sc">$</span>predictions</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="gradient-boosted-tree" class="level2">
+<h2 class="anchored" data-anchor-id="gradient-boosted-tree">Gradient-Boosted Tree</h2>
+<p>We now train a gradient-boosted tree. Because the test and train data do not share the same one-hot encoded columns after <code>prepare_features</code>, only common features are used. Column alignment is performed before cross-validation so CV results reflect the actual feature set used for training:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>common_cols <span class="ot">&lt;-</span> <span class="fu">intersect</span>(<span class="fu">colnames</span>(df_test_features), <span class="fu">colnames</span>(df_train_features))</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>df_train_features <span class="ot">&lt;-</span> <span class="fu">subset</span>(df_train_features, <span class="at">select =</span> common_cols)</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>df_test_features <span class="ot">&lt;-</span> <span class="fu">subset</span>(df_test_features, <span class="at">select =</span> common_cols)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>Run cross-validation to find the optimal number of boosting rounds:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">126</span>)</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>params <span class="ot">&lt;-</span> <span class="fu">xgb.params</span>(</span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">objective =</span> <span class="st">"reg:squarederror"</span>,</span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">eta =</span> <span class="fl">0.3</span>,</span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">max_depth =</span> <span class="dv">5</span></span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>dtrain <span class="ot">&lt;-</span> <span class="fu">xgb.DMatrix</span>(</span>
+<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">data  =</span> <span class="fu">as.matrix</span>(df_train_features),</span>
+<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">label =</span> <span class="fu">as.matrix</span>(outcome_train)</span>
+<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a>cross_val <span class="ot">&lt;-</span> <span class="fu">xgb.cv</span>(</span>
+<span id="cb19-15"><a href="#cb19-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">params =</span> params,</span>
+<span id="cb19-16"><a href="#cb19-16" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> dtrain,</span>
+<span id="cb19-17"><a href="#cb19-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">nrounds =</span> <span class="dv">100</span>,</span>
+<span id="cb19-18"><a href="#cb19-18" aria-hidden="true" tabindex="-1"></a>  <span class="at">nfold =</span> <span class="dv">5</span></span>
+<span id="cb19-19"><a href="#cb19-19" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] train-rmse:565.736413±10.903993 test-rmse:571.674737±40.495638 
+[2] train-rmse:526.890563±11.495047 test-rmse:539.133396±42.069268 
+[3] train-rmse:500.752545±9.787499  test-rmse:522.902531±44.932583 
+[4] train-rmse:483.991291±9.668999  test-rmse:511.964424±44.656564 
+[5] train-rmse:473.149854±8.336665  test-rmse:505.434460±45.950883 
+[6] train-rmse:463.958800±7.518284  test-rmse:503.305929±46.421288 
+[7] train-rmse:456.734603±7.961637  test-rmse:500.525827±46.734031 
+[8] train-rmse:452.269756±7.577794  test-rmse:499.194104±47.015831 
+[9] train-rmse:448.120131±8.671958  test-rmse:498.874114±46.529010 
+[10]    train-rmse:445.021695±8.693988  test-rmse:498.624891±46.540926 
+[11]    train-rmse:442.042058±8.714849  test-rmse:498.519278±46.855234 
+[12]    train-rmse:439.928029±8.778669  test-rmse:498.968105±46.171295 
+[13]    train-rmse:437.836803±8.903083  test-rmse:497.924798±45.830612 
+[14]    train-rmse:436.209890±9.337103  test-rmse:498.249243±46.010924 
+[15]    train-rmse:434.693460±9.469966  test-rmse:497.984691±46.493426 
+[16]    train-rmse:433.420891±9.358099  test-rmse:498.206530±46.911595 
+[17]    train-rmse:432.411198±9.544733  test-rmse:498.550808±46.774339 
+[18]    train-rmse:431.052277±9.941952  test-rmse:499.279976±46.376187 
+[19]    train-rmse:429.841525±10.624911 test-rmse:498.744935±46.178792 
+[20]    train-rmse:428.856709±10.546109 test-rmse:499.572939±46.769581 
+[21]    train-rmse:427.433039±10.945698 test-rmse:499.650424±46.476622 
+[22]    train-rmse:426.690873±11.031204 test-rmse:499.425311±45.834014 
+[23]    train-rmse:425.951169±11.299879 test-rmse:499.924887±45.842113 
+[24]    train-rmse:425.152168±11.133303 test-rmse:500.457007±45.737835 
+[25]    train-rmse:424.395273±10.985767 test-rmse:501.133014±45.598558 
+[26]    train-rmse:423.530883±10.923786 test-rmse:501.461518±45.914196 
+[27]    train-rmse:422.440127±10.825544 test-rmse:501.803483±46.118426 
+[28]    train-rmse:421.598281±10.890465 test-rmse:502.206477±45.981196 
+[29]    train-rmse:420.954576±10.821359 test-rmse:502.530972±46.117281 
+[30]    train-rmse:420.520301±10.888631 test-rmse:502.831725±45.716541 
+[31]    train-rmse:419.838940±10.747840 test-rmse:503.107020±45.241926 
+[32]    train-rmse:418.917187±10.411167 test-rmse:503.649555±44.869110 
+[33]    train-rmse:418.048218±10.089949 test-rmse:504.209364±44.728902 
+[34]    train-rmse:417.243487±10.004525 test-rmse:504.723270±44.640213 
+[35]    train-rmse:416.476971±9.772369  test-rmse:505.008129±45.132499 
+[36]    train-rmse:416.110106±9.756111  test-rmse:505.095635±45.468334 
+[37]    train-rmse:415.687865±9.965240  test-rmse:505.066371±45.203643 
+[38]    train-rmse:415.349777±9.898533  test-rmse:505.399940±44.929214 
+[39]    train-rmse:414.889276±9.887427  test-rmse:505.613802±44.207933 
+[40]    train-rmse:414.611030±9.932614  test-rmse:505.719968±44.075817 
+[41]    train-rmse:414.318207±9.978683  test-rmse:505.733139±44.032819 
+[42]    train-rmse:413.925475±9.931780  test-rmse:506.593865±44.100429 
+[43]    train-rmse:413.516545±9.887945  test-rmse:506.928623±44.438902 
+[44]    train-rmse:413.124379±9.836775  test-rmse:507.037452±44.485075 
+[45]    train-rmse:412.880086±9.862086  test-rmse:507.313754±44.494327 
+[46]    train-rmse:412.465491±9.710650  test-rmse:507.735267±44.735739 
+[47]    train-rmse:412.104378±9.648388  test-rmse:508.115640±44.395204 
+[48]    train-rmse:411.751402±9.846092  test-rmse:508.398138±44.290924 
+[49]    train-rmse:411.419610±9.845350  test-rmse:508.567040±44.348621 
+[50]    train-rmse:411.038911±9.705282  test-rmse:508.749328±44.353019 
+[51]    train-rmse:410.670124±9.792291  test-rmse:509.096114±44.490110 
+[52]    train-rmse:410.349518±9.629085  test-rmse:509.208672±44.496765 
+[53]    train-rmse:409.995865±9.769533  test-rmse:509.552784±44.460844 
+[54]    train-rmse:409.771626±9.741549  test-rmse:509.730463±44.579147 
+[55]    train-rmse:409.480516±9.836785  test-rmse:510.060831±44.403796 
+[56]    train-rmse:409.123162±9.855475  test-rmse:510.798497±44.451361 
+[57]    train-rmse:408.720841±9.679579  test-rmse:511.185351±44.295047 
+[58]    train-rmse:408.466844±9.685546  test-rmse:511.304351±44.381279 
+[59]    train-rmse:408.241459±9.780681  test-rmse:511.619602±44.222644 
+[60]    train-rmse:407.844424±9.625189  test-rmse:511.816749±44.333180 
+[61]    train-rmse:407.531812±9.604348  test-rmse:511.852057±44.217798 
+[62]    train-rmse:407.297011±9.644516  test-rmse:511.859340±44.227380 
+[63]    train-rmse:407.106911±9.649165  test-rmse:512.183660±44.098124 
+[64]    train-rmse:406.817792±9.683850  test-rmse:512.750452±44.081335 
+[65]    train-rmse:406.529335±9.604343  test-rmse:512.808630±44.027729 
+[66]    train-rmse:406.311606±9.549383  test-rmse:513.000709±44.027586 
+[67]    train-rmse:406.012389±9.558995  test-rmse:513.623702±43.832110 
+[68]    train-rmse:405.833360±9.548130  test-rmse:513.793371±43.989526 
+[69]    train-rmse:405.413607±9.655611  test-rmse:513.956491±43.996811 
+[70]    train-rmse:405.037696±9.398932  test-rmse:514.182285±44.094412 
+[71]    train-rmse:404.785570±9.400665  test-rmse:514.393980±43.979359 
+[72]    train-rmse:404.606922±9.387450  test-rmse:514.827132±44.230260 
+[73]    train-rmse:404.389731±9.356736  test-rmse:514.936365±44.372938 
+[74]    train-rmse:404.143382±9.266924  test-rmse:514.972197±44.581628 
+[75]    train-rmse:403.890939±9.243231  test-rmse:515.191530±44.534724 
+[76]    train-rmse:403.583278±9.165079  test-rmse:515.372580±44.350550 
+[77]    train-rmse:403.242765±9.224251  test-rmse:515.582928±44.584830 
+[78]    train-rmse:403.087889±9.222432  test-rmse:515.652522±44.547159 
+[79]    train-rmse:402.823989±9.026485  test-rmse:515.858388±44.531373 
+[80]    train-rmse:402.628828±8.956897  test-rmse:516.062099±44.100733 
+[81]    train-rmse:402.444373±9.074325  test-rmse:516.225691±44.134458 
+[82]    train-rmse:402.283576±9.153320  test-rmse:516.302031±44.167772 
+[83]    train-rmse:401.992180±9.309462  test-rmse:516.453399±43.924508 
+[84]    train-rmse:401.764467±9.440439  test-rmse:516.593214±43.962574 
+[85]    train-rmse:401.485097±9.401557  test-rmse:516.712424±43.918244 
+[86]    train-rmse:401.219826±9.505535  test-rmse:516.849917±43.827689 
+[87]    train-rmse:401.055644±9.487437  test-rmse:517.030547±43.739819 
+[88]    train-rmse:400.928438±9.480176  test-rmse:517.271473±43.661326 
+[89]    train-rmse:400.762757±9.458533  test-rmse:517.602093±43.900997 
+[90]    train-rmse:400.613816±9.486675  test-rmse:517.865615±43.735054 
+[91]    train-rmse:400.457319±9.523993  test-rmse:517.991732±43.632076 
+[92]    train-rmse:400.031649±9.319432  test-rmse:518.405873±43.611566 
+[93]    train-rmse:399.835839±9.284013  test-rmse:518.612057±43.685576 
+[94]    train-rmse:399.696090±9.265497  test-rmse:518.685443±43.781536 
+[95]    train-rmse:399.531505±9.241543  test-rmse:518.898860±43.732010 
+[96]    train-rmse:399.363204±9.181509  test-rmse:519.325931±43.446844 
+[97]    train-rmse:399.169830±9.336245  test-rmse:519.412679±43.450618 
+[98]    train-rmse:399.049456±9.359258  test-rmse:519.654482±43.488819 
+[99]    train-rmse:398.858036±9.388243  test-rmse:519.850196±43.624163 
+[100]   train-rmse:398.653907±9.474618  test-rmse:519.899515±43.706651 </code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>eval_log <span class="ot">&lt;-</span> cross_val<span class="sc">$</span>evaluation_log</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>best_nrounds <span class="ot">&lt;-</span> eval_log[<span class="fu">which.min</span>(eval_log<span class="sc">$</span>test_rmse_mean), <span class="st">"iter"</span>][[<span class="dv">1</span>]]</span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>eval_log <span class="sc">%&gt;%</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>(<span class="at">ntrees.train =</span> <span class="fu">which.min</span>(train_rmse_mean),</span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>            <span class="at">ntrees.test =</span> <span class="fu">which.min</span>(test_rmse_mean))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>  ntrees.train ntrees.test
+1          100          13</code></pre>
+</div>
+</div>
+<p>Train the gradient-boosted tree using the optimal number of rounds from cross-validation:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">123</span>)</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>model.xgb <span class="ot">&lt;-</span> <span class="fu">xgboost</span>(<span class="at">data =</span> <span class="fu">as.matrix</span>(df_train_features),</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>                     <span class="at">label =</span> <span class="fu">as.matrix</span>(outcome_train),</span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>                     <span class="at">nrounds =</span> best_nrounds,</span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>                     <span class="at">objective =</span> <span class="st">"reg:squarederror"</span>,</span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>                     <span class="at">eta =</span> <span class="fl">0.3</span>,</span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>                     <span class="at">max_depth =</span> <span class="dv">5</span>,</span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>                     <span class="at">verbose =</span> <span class="cn">FALSE</span></span>
+<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning in throw_err_or_depr_msg("Passed unrecognized parameters: ",
+paste(head(names_unrecognized), : Passed unrecognized parameters: verbose. This
+warning will become an error in a future version.</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning in throw_err_or_depr_msg("Parameter '", match_old, "' has been renamed
+to '", : Parameter 'data' has been renamed to 'x'. This warning will become an
+error in a future version.</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning in throw_err_or_depr_msg("Parameter '", match_old, "' has been renamed
+to '", : Parameter 'label' has been renamed to 'y'. This warning will become an
+error in a future version.</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning in throw_err_or_depr_msg("Parameter '", match_old, "' has been renamed
+to '", : Parameter 'eta' has been renamed to 'learning_rate'. This warning will
+become an error in a future version.</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb28"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>df_test<span class="sc">$</span>pred.xgb <span class="ot">&lt;-</span> <span class="fu">predict</span>(model.xgb, <span class="at">newdata =</span> <span class="fu">as.matrix</span>(df_test_features))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="model-comparison" class="level2">
+<h2 class="anchored" data-anchor-id="model-comparison">Model Comparison</h2>
+<p>Compare RMSE across all three models. The random forest OOB RMSE is its built-in cross-validation estimate:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>rmse_lm <span class="ot">&lt;-</span> df_test <span class="sc">%&gt;%</span></span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">residual =</span> pred.lm <span class="sc">-</span> power_consumption) <span class="sc">%&gt;%</span></span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>(<span class="at">rmse =</span> <span class="fu">sqrt</span>(<span class="fu">mean</span>(residual<span class="sc">^</span><span class="dv">2</span>))) <span class="sc">%&gt;%</span></span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pull</span>(rmse)</span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a>rmse_rf <span class="ot">&lt;-</span> df_test <span class="sc">%&gt;%</span></span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">residual =</span> pred.rf <span class="sc">-</span> power_consumption) <span class="sc">%&gt;%</span></span>
+<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>(<span class="at">rmse =</span> <span class="fu">sqrt</span>(<span class="fu">mean</span>(residual<span class="sc">^</span><span class="dv">2</span>))) <span class="sc">%&gt;%</span></span>
+<span id="cb29-9"><a href="#cb29-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pull</span>(rmse)</span>
+<span id="cb29-10"><a href="#cb29-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-11"><a href="#cb29-11" aria-hidden="true" tabindex="-1"></a>rmse_rf_oob <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(model.rf<span class="sc">$</span>prediction.error)</span>
+<span id="cb29-12"><a href="#cb29-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-13"><a href="#cb29-13" aria-hidden="true" tabindex="-1"></a>rmse_xgb <span class="ot">&lt;-</span> df_test <span class="sc">%&gt;%</span></span>
+<span id="cb29-14"><a href="#cb29-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">residual =</span> pred.xgb <span class="sc">-</span> power_consumption) <span class="sc">%&gt;%</span></span>
+<span id="cb29-15"><a href="#cb29-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>(<span class="at">rmse =</span> <span class="fu">sqrt</span>(<span class="fu">mean</span>(residual<span class="sc">^</span><span class="dv">2</span>))) <span class="sc">%&gt;%</span></span>
+<span id="cb29-16"><a href="#cb29-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pull</span>(rmse)</span>
+<span id="cb29-17"><a href="#cb29-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-18"><a href="#cb29-18" aria-hidden="true" tabindex="-1"></a><span class="fu">tibble</span>(</span>
+<span id="cb29-19"><a href="#cb29-19" aria-hidden="true" tabindex="-1"></a>  <span class="at">model =</span> <span class="fu">c</span>(<span class="st">"Linear"</span>, <span class="st">"Random Forest (test)"</span>, <span class="st">"Random Forest (OOB)"</span>, <span class="st">"XGBoost"</span>),</span>
+<span id="cb29-20"><a href="#cb29-20" aria-hidden="true" tabindex="-1"></a>  <span class="at">rmse  =</span> <span class="fu">c</span>(rmse_lm, rmse_rf, rmse_rf_oob, rmse_xgb)</span>
+<span id="cb29-21"><a href="#cb29-21" aria-hidden="true" tabindex="-1"></a>) <span class="sc">%&gt;%</span> <span class="fu">arrange</span>(rmse)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 4 × 2
+  model                 rmse
+  &lt;chr&gt;                &lt;dbl&gt;
+1 Random Forest (test)  386.
+2 XGBoost               409.
+3 Linear                440.
+4 Random Forest (OOB)   476.</code></pre>
+</div>
+</div>
+<p>Plot the models (colored) against test data (black):</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a>plot <span class="ot">&lt;-</span> df_test <span class="sc">%&gt;%</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_longer</span>(<span class="at">cols =</span> <span class="fu">c</span>(pred.xgb, pred.lm, pred.rf), <span class="at">names_to =</span> <span class="st">"model"</span>, <span class="at">values_to =</span> <span class="st">"predicted"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>() <span class="sc">+</span></span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">x =</span> date, <span class="at">y =</span> power_consumption), <span class="at">alpha =</span> <span class="fl">0.7</span>) <span class="sc">+</span></span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">x =</span> date, <span class="at">y =</span> predicted, <span class="at">color =</span> model)) <span class="sc">+</span></span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Date"</span>, <span class="at">y =</span> <span class="st">"Power Consumption (kwH)"</span>) <span class="sc">+</span></span>
+<span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>() <span class="sc">+</span></span>
+<span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggtitle</span>(<span class="st">"Power Consumption Over Time"</span>)</span>
+<span id="cb31-9"><a href="#cb31-9" aria-hidden="true" tabindex="-1"></a>plot</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="PowerConsumption_files/figure-html/unnamed-chunk-11-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const onCopySuccess = function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  }
+  const getTextToCopy = function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+    text: getTextToCopy
+  });
+  clipboard.on('success', onCopySuccess);
+  if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+    // For code content inside modals, clipBoardJS needs to be initialized with a container option
+    // TODO: Check when it could be a function (https://github.com/zenorocha/clipboard.js/issues/860)
+    const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+      text: getTextToCopy,
+      container: window.document.getElementById('quarto-embedded-source-code-modal')
+    });
+    clipboardModal.on('success', onCopySuccess);
+  }
+    var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+    var mailtoRegex = new RegExp(/^mailto:/);
+      var filterRegex = new RegExp('/' + window.location.host + '/');
+    var isInternal = (href) => {
+        return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+    }
+    // Inspect non-navigation links and adorn them if external
+ 	var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+    for (var i=0; i<links.length; i++) {
+      const link = links[i];
+      if (!isInternal(link.href)) {
+        // undo the damage that might have been done by quarto-nav.js in the case of
+        // links that we want to consider external
+        if (link.dataset.originalHref !== undefined) {
+          link.href = link.dataset.originalHref;
+        }
+      }
+    }
+  function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+    const config = {
+      allowHTML: true,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start',
+    };
+    if (contentFn) {
+      config.content = contentFn;
+    }
+    if (onTriggerFn) {
+      config.onTrigger = onTriggerFn;
+    }
+    if (onUntriggerFn) {
+      config.onUntrigger = onUntriggerFn;
+    }
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      if (note) {
+        return note.innerHTML;
+      } else {
+        return "";
+      }
+    });
+  }
+  const xrefs = window.document.querySelectorAll('a.quarto-xref');
+  const processXRef = (id, note) => {
+    // Strip column container classes
+    const stripColumnClz = (el) => {
+      el.classList.remove("page-full", "page-columns");
+      if (el.children) {
+        for (const child of el.children) {
+          stripColumnClz(child);
+        }
+      }
+    }
+    stripColumnClz(note)
+    if (id === null || id.startsWith('sec-')) {
+      // Special case sections, only their first couple elements
+      const container = document.createElement("div");
+      if (note.children && note.children.length > 2) {
+        container.appendChild(note.children[0].cloneNode(true));
+        for (let i = 1; i < note.children.length; i++) {
+          const child = note.children[i];
+          if (child.tagName === "P" && child.innerText === "") {
+            continue;
+          } else {
+            container.appendChild(child.cloneNode(true));
+            break;
+          }
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(container);
+        }
+        return container.innerHTML
+      } else {
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        return note.innerHTML;
+      }
+    } else {
+      // Remove any anchor links if they are present
+      const anchorLink = note.querySelector('a.anchorjs-link');
+      if (anchorLink) {
+        anchorLink.remove();
+      }
+      if (window.Quarto?.typesetMath) {
+        window.Quarto.typesetMath(note);
+      }
+      // TODO in 1.5, we should make sure this works without a callout special case
+      if (note.classList.contains("callout")) {
+        return note.outerHTML;
+      } else {
+        return note.innerHTML;
+      }
+    }
+  }
+  for (var i=0; i<xrefs.length; i++) {
+    const xref = xrefs[i];
+    tippyHover(xref, undefined, function(instance) {
+      instance.disable();
+      let url = xref.getAttribute('href');
+      let hash = undefined; 
+      if (url.startsWith('#')) {
+        hash = url;
+      } else {
+        try { hash = new URL(url).hash; } catch {}
+      }
+      if (hash) {
+        const id = hash.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note !== null) {
+          try {
+            const html = processXRef(id, note.cloneNode(true));
+            instance.setContent(html);
+          } finally {
+            instance.enable();
+            instance.show();
+          }
+        } else {
+          // See if we can fetch this
+          fetch(url.split('#')[0])
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.getElementById(id);
+            if (note !== null) {
+              const html = processXRef(id, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      } else {
+        // See if we can fetch a full url (with no hash to target)
+        // This is a special case and we should probably do some content thinning / targeting
+        fetch(url)
+        .then(res => res.text())
+        .then(html => {
+          const parser = new DOMParser();
+          const htmlDoc = parser.parseFromString(html, "text/html");
+          const note = htmlDoc.querySelector('main.content');
+          if (note !== null) {
+            // This should only happen for chapter cross references
+            // (since there is no id in the URL)
+            // remove the first header
+            if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+              note.children[0].remove();
+            }
+            const html = processXRef(null, note);
+            instance.setContent(html);
+          } 
+        }).finally(() => {
+          instance.enable();
+          instance.show();
+        });
+      }
+    }, function(instance) {
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            div.style.left = 0;
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+        // Handle positioning of the toggle
+    window.addEventListener(
+      "resize",
+      throttle(() => {
+        elRect = undefined;
+        if (selectedAnnoteEl) {
+          selectCodeLines(selectedAnnoteEl);
+        }
+      }, 10)
+    );
+    function throttle(fn, ms) {
+    let throttle = false;
+    let timer;
+      return (...args) => {
+        if(!throttle) { // first call gets through
+            fn.apply(this, args);
+            throttle = true;
+        } else { // all the others get throttled
+            if(timer) clearTimeout(timer); // cancel #2
+            timer = setTimeout(() => {
+              fn.apply(this, args);
+              timer = throttle = false;
+            }, ms);
+        }
+      };
+    }
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
