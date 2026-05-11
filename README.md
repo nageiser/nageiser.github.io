@@ -7,7 +7,6 @@ Projects in statistical analysis, machine learning, data engineering, and visual
 | Project | Description | Tools |
 |---------|-------------|-------|
 | [Video Rental Revenue & Customer Analysis](./pagila-revenue-analysis) | SQL-based analysis of a video rental chain's revenue patterns and customer segmentation using an RFM framework, with an [interactive Tableau dashboard](https://public.tableau.com/views/VideoStoreRentalAnalysis/RevenueDashboard) | PostgreSQL · SQL · Tableau |
-| [XML ETL Pipeline](./XML_ETL_pipeline) | End-to-end ETL pipeline ingesting PubMed XML metadata into a normalized PostgreSQL schema, with field validation and source-to-target mapping documentation | Python · PostgreSQL · XML |
 | [International Trade Network](./IntlTradeNetwork) | Network analysis of global bilateral trade flows using graph-theoretic methods to identify central trading nations and community structure | R · igraph |
 | [Power Consumption Forecasting](./PowerUse) | Random forest model predicting household electricity usage, with out-of-bag error estimation and feature importance analysis | R · Quarto |
 | [Russian Election Fraud Detection](./electionfraud_mc) | Statistical analysis of voting patterns in the 2011 Russian State Duma election to detect irregularities consistent with ballot stuffing, following Rozenas (2017) | R |
